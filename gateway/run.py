@@ -14,6 +14,7 @@ Usage:
 """
 
 import asyncio
+import fnmatch
 import json
 import logging
 import os
@@ -2802,7 +2803,10 @@ class GatewayRunner:
         
         Checks in order:
         1. Per-platform allow-all flag (e.g., DISCORD_ALLOW_ALL_USERS=true)
-        2. Environment variable allowlists (TELEGRAM_ALLOWED_USERS, etc.)
+        2. Environment variable allowlists (TELEGRAM_ALLOWED_USERS, etc.).
+           Entries may be exact user IDs or fnmatch-style glob patterns
+           (e.g. ``*@example.com``). Glob matching is case-insensitive and
+           only applies to the full user ID, not its local part.
         3. DM pairing approved list
         4. Global allow-all (GATEWAY_ALLOW_ALL_USERS=true)
         5. Default: deny
@@ -2939,7 +2943,19 @@ class GatewayRunner:
             if normalized_user_id:
                 check_ids.add(normalized_user_id)
 
-        return bool(check_ids & allowed_ids)
+        if check_ids & allowed_ids:
+            return True
+
+        # fnmatch-style glob matching for entries like "*@example.com".
+        # Standalone "*" is already handled above as allow-all.
+        user_id_lower = user_id.lower()
+        for pattern in allowed_ids:
+            if ("*" in pattern or "?" in pattern) and fnmatch.fnmatchcase(
+                user_id_lower, pattern.lower()
+            ):
+                return True
+
+        return False
 
     def _get_unauthorized_dm_behavior(self, platform: Optional[Platform]) -> str:
         """Return how unauthorized DMs should be handled for a platform."""
